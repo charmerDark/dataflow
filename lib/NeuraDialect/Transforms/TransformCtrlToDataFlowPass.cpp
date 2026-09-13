@@ -692,7 +692,6 @@ void createReserveAndPhiOps(
 
       if (phi_operands.size() == 1) {
         arg_to_phi_result[arg] = phi_operands[0];
-        arg.replaceAllUsesWith(phi_operands[0]);
       }
       continue;
     }
@@ -715,7 +714,6 @@ void createReserveAndPhiOps(
       // Creates phi operation for block argument without reserve.
       auto phi = builder.create<neura::PhiOp>(arg.getLoc(), arg.getType(),
                                               phi_operands);
-      arg.replaceAllUsesWith(phi);
       arg_to_phi_result[arg] = phi;
     }
   }
@@ -739,6 +737,15 @@ void transformControlFlowToDataFlow(Region &region, ControlFlowInfo &ctrl_info,
   for (auto &arg_to_phi_pair : arg_to_phi_result) {
     BlockArgument arg = arg_to_phi_pair.first;
     Value phi_result = arg_to_phi_pair.second;
+    // Resolves forwarding chains before replacement so that a later rewrite
+    // cannot reintroduce an argument from an already processed block.
+    while (auto forwarded_arg = dyn_cast<BlockArgument>(phi_result)) {
+      auto replacement = arg_to_phi_result.find(forwarded_arg);
+      if (replacement == arg_to_phi_result.end()) {
+        break;
+      }
+      phi_result = replacement->second;
+    }
     arg.replaceAllUsesWith(phi_result);
   }
 
